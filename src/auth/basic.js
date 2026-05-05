@@ -1,6 +1,6 @@
 import Auth from "./index";
 import i18n from '../i18n';
-import Utils from "../utils";
+import { hasText } from 'stac-js/src/utils.js';
 
 export default class BasicAuth extends Auth {
 
@@ -19,10 +19,11 @@ export default class BasicAuth extends Auth {
   }
 
   getButtonTitle() {
-  return i18n.global.t('authentication.button.title');
+    return i18n.global.t('authentication.button.title');
   }
 
-  async logout(/*credentials*/) {
+  async logout(credentials) {
+    await super.logout(credentials);
     if (this.router.currentRoute.value.name !== 'logout') {
       this.router.push('/auth/logout');
     }
@@ -33,7 +34,7 @@ export default class BasicAuth extends Auth {
     if (typeof value === 'string' && value.length >= 3) {
       value = `Basic ${btoa(value)}`;
     }
-    if (!Utils.hasText(value)) {
+    if (!hasText(value)) {
       value = undefined;
     }
     return {

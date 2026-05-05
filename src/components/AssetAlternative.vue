@@ -1,11 +1,11 @@
 <template>
-  <div>
+  <div class="asset-alternative">
     <h4 class="mb-4" v-html="fileFormat" />
     <HrefActions isAsset :data="asset" :shown="shown" @show="show" :auth="auth" />
     <div class="mt-4" v-if="asset.description">
       <Description :description="asset.description" compact />
     </div>
-    <MetadataGroups class="mt-4" :data="resolvedAsset" :context="context" :ignoreFields="ignore" title="" type="Asset" />
+    <MetadataGroups class="mt-4" :data="resolvedAsset" :ignoreFields="ignoredMetadataFields" title="" type="Asset" />
   </div>
 </template>
 
@@ -16,8 +16,9 @@ import Description from './Description.vue';
 import HrefActions from './HrefActions.vue';
 import StacFieldsMixin from './StacFieldsMixin';
 import AuthUtils from './auth/utils';
-import Utils from '../utils';
+import { isObject, size } from 'stac-js/src/utils.js';
 import { Asset, STACReference } from 'stac-js';
+import { getIgnoredFields } from '../ignored-metadata.js';
 
 export default {
   name: 'AssetAlternative',
@@ -44,38 +45,13 @@ export default {
     }
   },
   emits: ['show'],
-  data() {
-    return {
-      ignore: [
-        // Asset fields that are handled directly
-        'href',
-        'title',
-        'description',
-        'type',
-        'roles',
-        // Don't show these complex lists of coordinates: https://github.com/radiantearth/stac-browser/issues/141
-        'proj:bbox',
-        'proj:geometry',
-        // Don't show very specific options that can't be rendered nicely
-        'table:storage_options',
-        'xarray:open_kwargs',
-        'xarray:storage_options',
-        // Special handling for auth and storage
-        'auth:refs',
-        'storage:refs',
-        // Alternative Assets are displayed separately
-        'alternate',
-        'alternate:name',
-      ]
-    };
-  },
   computed: {
-    context() {
-      return this.asset.getContext();
+    ignoredMetadataFields() {
+      return getIgnoredFields(this.asset);
     },
     resolvedAsset() {
       if (Array.isArray(this.asset['storage:refs'])) {
-        const asset = new Asset(this.asset, this.asset.getKey(), this.context);
+        const asset = new Asset(this.asset);
         asset['storage:schemes'] = this.resolveStorage(this.asset);
         return asset;
       }
@@ -104,10 +80,10 @@ export default {
       if (obj instanceof STACReference) {
         const refs = obj.getMetadata('storage:refs');
         const schemes = obj.getMetadata('storage:schemes');
-        if (Utils.size(refs) > 0 && Utils.size(schemes) > 0) {
+        if (size(refs) > 0 && size(schemes) > 0) {
           return refs
             .map(ref => schemes[ref])
-            .filter(ref => Utils.isObject(ref));
+            .filter(ref => isObject(ref));
         }
       }
       return [];
@@ -118,3 +94,9 @@ export default {
   }
 };
 </script>
+
+<style lang="scss" scoped>
+.asset-alternative {
+  padding: 1rem;
+}
+</style>

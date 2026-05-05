@@ -1,5 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
 
+function getEnvWithoutSB() {
+  const env = {};
+  for (const key in process.env) {
+    if (!key.startsWith('SB_')) {
+      env[key] = process.env[key];
+    }
+  }
+  return env;
+}
+
 /**
  * @see https://playwright.dev/docs/test-configuration
  */
@@ -27,16 +37,27 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: process.env.CI ? process.env.PLAYWRIGHT_BASE_URL : 'http://localhost:8080',
+    baseURL: process.env.CI 
+      ? 'http://localhost:4173'  // Vite preview server port
+      : 'http://localhost:8080',
     
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
+
+    /* Clipboard permissions for copy-related tests */
+    permissions: ['clipboard-read', 'clipboard-write'],
     
     /* Screenshot on failure */
     screenshot: 'only-on-failure',
     
     /* Video on failure */
     video: 'retain-on-failure',
+
+    /* Force English locale so tests are deterministic regardless of host/CI locale.
+       The app auto-detects language from navigator.languages when detectLocaleFromBrowser is true. */
+    locale: 'en',
+
+    permissions: ['clipboard-read', 'clipboard-write'],
   },
 
   /* Configure projects for major browsers */
@@ -64,10 +85,19 @@ export default defineConfig({
   ],
 
   /* Run your local dev server before starting the tests */
-  webServer: process.env.CI ? undefined : {
-    command: 'npm start',
-    url: 'http://localhost:8080',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
-  },
+  webServer: process.env.CI 
+    ? {
+        // In CI: Build and serve the production build
+        command: 'npm run build && npx vite preview --port 4173 --strictPort',
+        env: getEnvWithoutSB(),
+        url: 'http://localhost:4173',
+        reuseExistingServer: false,
+        timeout: 120 * 1000,
+      }
+    : {
+        command: 'npm start',
+        url: 'http://localhost:8080',
+        reuseExistingServer: true,
+        timeout: 120 * 1000,
+      },
 });

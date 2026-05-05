@@ -1,5 +1,6 @@
 import { mapState } from 'vuex';
 import Utils from '../utils';
+import { hasText } from 'stac-js/src/utils.js';
 import { STAC } from 'stac-js';
 
 export default {
@@ -12,14 +13,14 @@ export default {
   computed: {
     ...mapState(['cardViewMode', 'crossOriginMedia', 'defaultThumbnailSize']),
     isList() {
-      return this.data && !this.data.isItem() && this.cardViewMode === 'list';
+      return this.data && !this.data.isItem && this.cardViewMode === 'list';
     },
     hasImage() {
       return this.showThumbnail && this.thumbnail;
     },
     thumbnail() {
       if (this.data) {
-        let thumbnails = this.data.getThumbnails(true, 'thumbnail');
+        let thumbnails = this.data.getThumbnails(true, 'thumbnail', true);
         if (thumbnails.length > 0) {
           let t = thumbnails[0];
           let width, height;
@@ -52,7 +53,7 @@ export default {
       return this.data instanceof STAC && Boolean(this.data.getMetadata('deprecated'));
     },
     hasDescription() {
-      return this.data instanceof STAC && Utils.hasText(this.data.getMetadata('description'));
+      return this.data instanceof STAC && hasText(this.data.getMetadata('description'));
     },
     summarizeDescription() {
       return this.hasDescription ? Utils.summarizeMd(this.data.getMetadata('description'), 300) : '';

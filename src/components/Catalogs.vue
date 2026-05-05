@@ -12,7 +12,7 @@
         v-if="allKeywords.length > 0"
         v-model="selectedKeywords"
         :options="allKeywords"
-        :multiple="true"
+        multiple
         :placeholder="$t('multiselect.keywordsPlaceholder')"
         :select-label="$t('multiselect.selectLabel')"
         :selected-label="$t('multiselect.selectedLabel')"
@@ -140,8 +140,8 @@ export default defineComponent({
     },
     allCatalogs() {
       return this.catalogs.map(catalog => {
-          let stac = this.getStac(catalog);
-          return stac ? stac : catalog;
+        let stac = this.getStac(catalog);
+        return stac ? stac : catalog;
       });
     },
     hasSearchCritera() {

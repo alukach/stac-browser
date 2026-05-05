@@ -1,23 +1,30 @@
 <template>
   <main class="search d-flex flex-column">
     <Loading v-if="!parent" stretch />
-    <ErrorAlert v-else-if="!searchLink" :description="$t('search.notSupported')" />
+    <ErrorAlert v-else-if="!supportsSearch" :description="$t('search.notSupported')" />
     <b-row v-else>
       <b-col class="left">
+        <WidgetHook id="view-search-filters-start" />
         <b-tabs v-model="activeSearch">
           <b-tab v-if="collectionSearch" :title="$t('search.tabs.collections')" id="search-collections-tab">
+            <WidgetHook id="view-search-filters-collections-start" />
             <SearchFilter
               :parent="parent" title="" :value="collectionFilters" type="Collections"
               @input="setFilters"
             />
+            <WidgetHook id="view-search-filters-collections-end" />
           </b-tab>
           <b-tab v-if="itemSearch" :title="$t('search.tabs.items')" id="search-items-tab">
+            <WidgetHook id="view-search-filters-items-start" />
             <SearchFilter
               :parent="parent" title="" :value="itemFilters" type="Global"
+              :searchLink="itemSearch"
               @input="setFilters"
             />
+            <WidgetHook id="view-search-filters-items-end" />
           </b-tab>
         </b-tabs>
+        <WidgetHook id="view-search-filters-end" />
       </b-col>
       <b-col class="right">
         <Loading v-if="loading" fill top />
@@ -26,6 +33,7 @@
         <b-alert v-else-if="results.length === 0 && noFurtherItems" variant="info" show>{{ $t('search.noFurtherItemsFound') }}</b-alert>
         <b-alert v-else-if="results.length === 0" variant="warning" show>{{ $t('search.noItemsFound') }}</b-alert>
         <template v-else>
+          <WidgetHook id="view-search-results-start" />
           <div id="search-map" v-if="resultCollection">
             <MapView :stac="parent" :children="resultCollection" onfocusOnly popover />
           </div>
@@ -51,6 +59,7 @@
             :pagination="pagination" :loading="loading" @paginate="loadResults"
             :count="totalCount" :apiFilters="itemFilters"
           />
+          <WidgetHook id="view-search-results-end" />
         </template>
       </b-col>
     </b-row>
@@ -64,6 +73,8 @@
 
 <script>
 import Utils from '../utils';
+import { toAbsolute } from 'stac-js/src/http.js';
+import { isObject, size } from 'stac-js/src/utils.js';
 import SearchFilter from '../components/SearchFilter.vue';
 import Loading from '../components/Loading.vue';
 import ErrorAlert from '../components/ErrorAlert.vue';
@@ -75,7 +86,7 @@ import { mapGetters, mapState } from "vuex";
 import { BTab, BTabs } from 'bootstrap-vue-next';
 
 export default defineComponent({
-  name: "Search",
+  name: "ApiSearch",
   components: {
     Catalogs: defineAsyncComponent(() => import('../components/Catalogs.vue')),
     BTabs,
@@ -111,13 +122,16 @@ export default defineComponent({
     ...mapState(['catalogUrl', 'catalogTitle', 'searchResultsPerPage', 'itemsPerPage', 'collectionsPerPage']),
     ...mapGetters(['canSearchItems', 'canSearchCollections', 'getStac', 'root', 'collectionLink', 'parentLink', 'fromBrowserPath', 'toBrowserPath']),
     selectedCollectionCount() {
-      return Utils.size(this.selectedCollections);
+      return size(this.selectedCollections);
     },
     totalCount() {
       if (typeof this.data.numberMatched === 'number') {
         return this.data.numberMatched;
       }
       return null;
+    },
+    supportsSearch() {
+      return this.canSearchCollections || this.canSearchItems;
     },
     searchLink() {
       return this.isCollectionSearch ? this.collectionSearch : this.itemSearch;
@@ -144,7 +158,7 @@ export default defineComponent({
       }
     },
     results() {
-      if (Utils.size(this.data) === 0) {
+      if (size(this.data) === 0) {
         return [];
       }
       let list = this.isCollectionSearch ? this.data.collections : this.data.features;
@@ -156,13 +170,13 @@ export default defineComponent({
       return list
         .map(obj => {
           try {
-            if (!Utils.isObject(obj) || obj.type !== type) {
+            if (!isObject(obj) || obj.type !== type) {
               return null;
             }
             let selfLink = Utils.getLinkWithRel(obj.links, 'self');
             let url;
             if (selfLink?.href) {
-              url = Utils.toAbsolute(selfLink.href, this.link.href);
+              url = toAbsolute(selfLink.href, this.link.href);
             }
             let stac = createSTAC(obj, url, this.toBrowserPath(url));
             stac = processSTAC(this.$store.state, stac);
@@ -253,17 +267,18 @@ export default defineComponent({
       try {
         this.link = Utils.addFiltersToLink(link, this.filters, this.searchResultsPerPage);
 
-        let key = this.isCollectionSearch ? 'collections' : 'features';
-        let response = await stacRequest(this.$store, this.link);
+        const key = this.isCollectionSearch ? 'collections' : 'features';
+        const response = await stacRequest(this.$store, this.link);
         if (response) {
           this.showPage(response.config.url);
         }
-        if (!Utils.isObject(response.data) || !Array.isArray(response.data[key])) {
+        if (!isObject(response.data) || !Array.isArray(response.data[key])) {
           this.data = {};
           this.error = this.$t(this.isCollectionSearch ? 'errors.invalidStacCollections' : 'errors.invalidStacItems');
         }
         else {
-          this.data = response.data;
+          const url = this.link.getAbsoluteUrl();
+          this.data = createSTAC(response.data, url, this.toBrowserPath(url));
         }
       } catch (error) {
         this.data = {};

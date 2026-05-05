@@ -2,6 +2,7 @@
   <div :class="{cc: true, [cssStacType]: true, empty: !hasCatalogs && !hasItems}" :key="data.id">
     <b-row>
       <b-col class="meta">
+        <WidgetHook id="view-catalog-meta-start" />
         <section class="intro">
           <h2>{{ $t('description') }}</h2>
           <DeprecationNotice v-if="showDeprecation" :data="data" />
@@ -21,30 +22,34 @@
               <b-col md="8" class="value"><span v-html="temporalExtents" /></b-col>
             </b-row>
           </section>
-          <LinkList v-if="linkPosition === 'left'" :title="$t('additionalResources')" :links="additionalLinks" :context="data" />
+          <LinkList v-if="linkPosition === 'left'" :title="$t('additionalResources')" :links="additionalLinks" />
         </section>
         <section v-if="isCollection || hasThumbnails" class="mb-4">
           <b-card no-body class="maps-preview">
             <b-tabs v-model="tab" ref="tabs" pills card vertical end>
-              <b-tab v-if="isCollection" :title="$t('map')" no-body>
+              <b-tab v-if="isCollection" :id="tabIds.map" :title="$t('map')" no-body>
                 <MapView :stac="data" v-bind="mapData" @changed="dataChanged" @empty="handleEmptyMap" onfocusOnly popover />
               </b-tab>
-              <b-tab v-if="hasThumbnails" :title="$t('thumbnails')" no-body>
+              <b-tab v-if="hasThumbnails" :id="tabIds.thumbnails" :title="$t('thumbnails')" no-body>
                 <Thumbnails :thumbnails="thumbnails" />
               </b-tab>
             </b-tabs>
           </b-card>
         </section>
-        <Assets v-if="hasAssets" :assets="assets" :context="data" :shown="selectedReferences" @show-asset="showAsset" />
-        <Assets v-if="hasItemAssets && !hasItems" :assets="itemAssets" :context="data" :definition="true" />
+        <Assets v-if="hasAssets" :assets="assets" :shown="selectedReferences" @show-asset="showAsset" />
+        <Assets v-if="hasItemAssets && !hasItems" :assets="itemAssets" :definition="true" />
         <Providers v-if="providers" :providers="providers" />
         <MetadataGroups class="mb-4" :type="data.type" :data="data" :ignoreFields="ignoredMetadataFields" />
-        <LinkList v-if="linkPosition === 'right'" :title="$t('additionalResources')" :links="additionalLinks" :context="data" />
+        <LinkList v-if="linkPosition === 'right'" :title="$t('additionalResources')" :links="additionalLinks" />
+        <WidgetHook id="view-catalog-meta-end" />
       </b-col>
       <b-col class="catalogs-container" v-if="hasCatalogs">
-        <Catalogs :catalogs="catalogs" :hasMore="!!nextCollectionsLink" @load-more="loadMoreCollections" />
+        <WidgetHook id="view-catalog-catalogs-start" />
+        <Catalogs :catalogs="catalogs" :hasMore="hasMore" @load-more="loadMoreCollections" />
+        <WidgetHook id="view-catalog-catalogs-end" />
       </b-col>
       <b-col class="items-container" v-if="hasItems || hasItemAssets">
+        <WidgetHook id="view-catalog-items-start" />
         <Items
           :stac="data" :items="items" :api="isApi"
           :showFilters="showFilters" :apiFilters="filters"
@@ -53,7 +58,8 @@
           @paginate="paginateItems" @filter-items="filterItems"
           @filters-shown="filtersShown"
         />
-        <Assets v-if="hasItemAssets" :assets="itemAssets" :context="data" :definition="true" />
+        <Assets v-if="hasItemAssets" :assets="itemAssets" :definition="true" />
+        <WidgetHook id="view-catalog-items-end" />
       </b-col>
     </b-row>
   </div>
@@ -70,10 +76,12 @@ import ShowAssetLinkMixin from '../components/ShowAssetLinkMixin';
 import StacFieldsMixin from '../components/StacFieldsMixin';
 import { formatLicense, formatTemporalExtents } from '@radiantearth/stac-fields/formatters';
 import Utils from '../utils';
+import { hasText, isObject } from 'stac-js/src/utils.js';
 import { addSchemaToDocument, createCatalogSchema } from '../schema-org';
 import { ItemCollection } from '../models/stac.js';
 import DeprecationMixin from '../components/DeprecationMixin.js';
 import { BTab, BTabs, BCard } from 'bootstrap-vue-next';
+import { getIgnoredFields } from '../ignored-metadata.js';
 
 export default defineComponent({
   name: "Catalog",
@@ -103,48 +111,17 @@ export default defineComponent({
   ],
   data() {
     return {
-      filters: {},
-      ignoredMetadataFields: [
-        // Catalog and Collection fields that are handled directly
-        'stac_version',
-        'stac_extensions',
-        'id',
-        'type',
-        'title',
-        'description',
-        'keywords',
-        'providers',
-        'license',
-        'extent',
-        'summaries',
-        'links',
-        'assets',
-        'item_assets',
-        // Don't show these complex lists of coordinates: https://github.com/radiantearth/stac-browser/issues/141
-        'proj:bbox',
-        'proj:geometry',
-        // API landing page, not very useful to display, but https://github.com/radiantearth/stac-browser/issues/136
-        'conformsTo',
-        // Will be rendered with a custom rendered
-        'deprecated',
-        // Special handling for the warning of the anonymized-location extension
-        'anon:warning',
-        // Special handling for the stats extension
-        'stats:catalogs',
-        'stats:collections',
-        'stats:items',
-        // Special handling for auth
-        'auth:schemes',
-        // Special handling for the STAC Browser config
-        'stac_browser'
-      ]
+      filters: {}
     };
   },
   computed: {
-    ...mapState(['data', 'url', 'apiItems', 'apiItemsLink', 'apiItemsPagination', 'apiItemsNumberMatched', 'nextCollectionsLink', 'stateQueryParameters']),
+    ...mapState(['data', 'url', 'apiCatalogPriority',  'apiItems', 'apiItemsLink', 'apiItemsPagination', 'apiItemsNumberMatched', 'nextCollectionsLink', 'stateQueryParameters']),
     ...mapGetters(['catalogs', 'collectionLink', 'isCollection', 'items', 'getApiItemsLoading', 'parentLink', 'rootLink']),
+    ignoredMetadataFields() {
+      return getIgnoredFields(this.data, 'CatalogLike');
+    },
     cssStacType() {
-      if (Utils.hasText(this.data?.type)) {
+      if (hasText(this.data?.type)) {
         return this.data?.type.toLowerCase();
       }
       return null;
@@ -166,6 +143,9 @@ export default defineComponent({
     apiItemsLoading() {
       return this.getApiItemsLoading(this.data);
     },
+    hasMore() {
+      return this.apiCatalogPriority !== 'childs' && Boolean(this.nextCollectionsLink);
+    },
     licenses() {
       if (this.data.license) {
         return this.formatLicense(this.data.license, null, null, this.data);
@@ -177,7 +157,7 @@ export default defineComponent({
       if (Array.isArray(this.data.providers) && this.data.providers.length > 0) {
         providers = this.data.providers;
       }
-      else if (this.isCollection && Utils.isObject(this.data.summaries) && Array.isArray(this.data.summaries.providers)) {
+      else if (this.isCollection && isObject(this.data.summaries) && Array.isArray(this.data.summaries.providers)) {
         providers = this.data.summaries.providers;
       }
       return providers.length > 0 ? providers : null;
@@ -186,8 +166,8 @@ export default defineComponent({
       if (this.isCollection && this.data.extent.temporal.interval.length > 0) {
         let extents = this.data.extent.temporal.interval;
         if (extents.length > 1) {
-            // Remove union temporal extent in favor of more concrete extents
-            extents = extents.slice(1);
+          // Remove union temporal extent in favor of more concrete extents
+          extents = extents.slice(1);
         }
         return this.formatTemporalExtents(extents);
       }
@@ -197,7 +177,7 @@ export default defineComponent({
       return this.itemAssets.length > 0;
     },
     itemAssets() {
-      if (!this.data || !Utils.isObject(this.data.item_assets)) {
+      if (!this.data || !isObject(this.data.item_assets)) {
         return [];
       }
       return Object.values(this.data.item_assets);
@@ -251,7 +231,7 @@ export default defineComponent({
   },
   methods: {
     filtersShown(show) {
-        this.$store.commit('updateState', {type: 'itemFilterOpen', value: show ? 1 : null});
+      this.$store.commit('updateState', {type: 'itemFilterOpen', value: show ? 1 : null});
     },
     loadMoreCollections() {
       this.$store.dispatch('loadNextApiCollections', {show: true});
@@ -325,7 +305,7 @@ export default defineComponent({
     }
   }
 
-  @include media-breakpoint-down(md) {
+  @include media-breakpoint-down(lg) {
     > .row {
       > .meta,
       > .items-container,
